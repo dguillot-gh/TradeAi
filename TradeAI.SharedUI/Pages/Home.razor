@@ -1,0 +1,585 @@
+@page "/"
+@inject HttpClient Http
+@inject TradeAI.SharedUI.Services.DashboardStateService State
+@inject IJSRuntime JS
+
+<PageTitle>TradeAI Dashboard</PageTitle>
+
+@if (marketPulse != null && marketPulse.Any())
+{
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+        @foreach (var idx in marketPulse)
+        {
+            var isUp = idx.is_up;
+            var color = isUp ? "var(--accent-success)" : "var(--accent-danger)";
+            <div class="glass-panel" style="padding: 1rem; display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.2);">
+                <div>
+                    <div style="font-size: 0.8rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.25rem;">@idx.name</div>
+                    <div style="font-size: 1.25rem; font-weight: bold;">@idx.price.ToString("N2")</div>
+                </div>
+                <div style="color: @color; font-weight: 600; font-size: 1.1rem; background: @(isUp ? "rgba(16, 185, 129, 0.1)" : "rgba(239, 68, 68, 0.1)"); padding: 0.2rem 0.5rem; border-radius: 6px;">
+                    @(isUp ? "+" : "")@idx.percent_change%
+                </div>
+            </div>
+        }
+    </div>
+}
+
+<div class="page-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 0.75rem;">
+    <div>
+        <h1 style="margin-bottom: 0.25rem;">Dashboard</h1>
+        <p>Welcome to your AI-powered trading hub.</p>
+    </div>
+    <button class="btn btn-primary" @onclick="ConnectRobinhood" disabled="@State.IsConnected">
+        @(State.IsConnected ? "✓ Connected" : "Connect Robinhood")
+    </button>
+</div>
+@if (requiresMfa)
+{
+    <div style="margin-bottom: 1.5rem; display: flex; gap: 0.5rem; align-items: center;">
+        <input type="text" class="form-control" @bind="mfaCode" placeholder="Enter SMS/MFA Code" style="padding: 0.5rem; border-radius: 4px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); flex-grow: 1;" />
+        <button class="btn btn-primary" @onclick="ConnectRobinhood">Submit Code</button>
+    </div>
+}
+@if (!string.IsNullOrEmpty(connectionMessage))
+{
+    <div style="margin-bottom: 1rem; color: var(--text-secondary); font-size: 0.875rem;">@connectionMessage</div>
+}
+
+<div class="grid-stats" style="margin-bottom: 1.5rem;">
+    <div class="glass-panel stat-card">
+        <span class="stat-title">Total Portfolio Value</span>
+        @if (isCheckingPortfolio)
+        {
+            <span class="stat-value" style="font-size: 1.2rem; color: var(--text-secondary);">Loading...</span>
+        }
+        else if (State.PortfolioSummary != null)
+        {
+            <span class="stat-value">$@State.PortfolioSummary.total_value.ToString("N2")</span>
+            <span style="color: @(State.PortfolioSummary.today_return_amount >= 0 ? "var(--accent-success)" : "var(--accent-danger)"); font-size: 0.8rem; font-weight: 500;">
+                @(State.PortfolioSummary.today_return_amount >= 0 ? "+" : "") $@State.PortfolioSummary.today_return_amount.ToString("N2") (@State.PortfolioSummary.today_return_percent.ToString("N2")%) Today
+            </span>
+        }
+        else
+        {
+            <span class="stat-value">$---</span>
+            <span style="color: var(--text-secondary); font-size: 0.8rem; font-weight: 500;">Connect to view</span>
+        }
+    </div>
+    
+    <div class="glass-panel stat-card">
+        <span class="stat-title">Buying Power</span>
+        <span class="stat-value">@State.BuyingPower</span>
+        <span style="color: var(--text-secondary); font-size: 0.8rem;">Available for trading</span>
+    </div>
+    
+    <div class="glass-panel stat-card">
+        <span class="stat-title">AI Confidence</span>
+        @if (isCheckingSuggestions)
+        {
+             <span class="stat-value text-success" style="font-size: 1.2rem; color: var(--text-secondary);">Thinking...</span>
+        }
+        else if (State.AiSuggestions != null && State.AiSuggestions.Any())
+        {
+            <span class="stat-value text-success">Active</span>
+            <span style="color: var(--text-secondary); font-size: 0.8rem;">@State.AiSuggestions.Count new suggestions</span>
+        }
+        else
+        {
+            <span class="stat-value">Idle</span>
+            <span style="color: var(--text-secondary); font-size: 0.8rem;">Awaiting portfolio connection</span>
+        }
+    </div>
+</div>
+
+<div class="glass-panel" style="padding: 1.25rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
+        <div>
+            <h2 style="margin-bottom: 0.15rem;">Recent AI Suggestions</h2>
+            @if (!string.IsNullOrEmpty(State.SuggestionsGeneratedAt))
+            {
+                <span style="color: var(--text-secondary); font-size: 0.75rem;">
+                    Last updated: @FormatGeneratedAt(State.SuggestionsGeneratedAt)
+                    @if (!State.SuggestionsAreFresh)
+                    {
+                        <span style="background: rgba(255,255,255,0.08); padding: 0.1rem 0.4rem; border-radius: 4px; margin-left: 0.35rem; font-size: 0.65rem; letter-spacing: 0.02em;">CACHED</span>
+                    }
+                </span>
+            }
+        </div>
+        <button class="btn btn-secondary" @onclick="RefreshSuggestions" disabled="@isRefreshingSuggestions"
+                style="font-size: 0.8rem; padding: 0.4rem 1rem; display: flex; align-items: center; gap: 0.4rem; border: 1px solid var(--border-color); background: var(--bg-surface-hover); color: var(--text-primary); border-radius: var(--radius-md); cursor: pointer; transition: all 0.2s ease;">
+            @if (isRefreshingSuggestions)
+            {
+                <span style="display: inline-block; width: 14px; height: 14px; border: 2px solid var(--text-secondary); border-top-color: var(--accent-primary); border-radius: 50%; animation: spin 0.8s linear infinite;"></span>
+                <span>Refreshing…</span>
+            }
+            else
+            {
+                <span>↻</span>
+                <span>Refresh Suggestions</span>
+            }
+        </button>
+    </div>
+    
+    <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+        @if (isCheckingSuggestions)
+        {
+            <div style="color: var(--text-secondary); text-align: center; padding: 1rem;">Analyzing current market conditions...</div>
+        }
+        else if (State.AiSuggestions != null && State.AiSuggestions.Any())
+        {
+            @foreach (var suggestion in State.AiSuggestions)
+            {
+                var actionBg = suggestion.action?.ToLower() == "buy" ? "var(--accent-success)" : "var(--accent-danger)";
+                <div class="suggestion-row">
+                    <div style="min-width: 0;">
+                        <h3 style="margin-bottom: 0.25rem; font-size: 1rem;">
+                            @suggestion.action @suggestion.symbol 
+                            <span style="font-size: 0.7rem; background: @actionBg; color: white; padding: 0.1rem 0.4rem; border-radius: 4px; margin-left: 0.25rem;">
+                                @suggestion.confidence Confidence
+                            </span>
+                            @if (suggestion.is_actioned)
+                            {
+                                <span style="font-size: 0.7rem; background: rgba(59, 130, 246, 0.2); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.4); padding: 0.1rem 0.4rem; border-radius: 4px; margin-left: 0.25rem;">
+                                    ✓ Executed
+                                </span>
+                            }
+                        </h3>
+                        <p style="font-size: 0.8rem;">@suggestion.reason</p>
+                    </div>
+                    <button class="btn btn-primary" @onclick="() => ReviewTrade(suggestion)" disabled="@isCheckingDeepDive">Review</button>
+                </div>
+            }
+        }
+        else
+        {
+             <div style="color: var(--text-secondary); padding: 1rem;">No AI suggestions currently available.</div>
+        }
+    </div>
+</div>
+
+@if (selectedSuggestion != null)
+{
+    <div class="modal-backdrop" @onclick="CloseDeepDive" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 1000; display: flex; justify-content: center; align-items: center; padding: 1rem;">
+        <div class="glass-panel" @onclick:stopPropagation="true" style="width: 100%; max-width: 600px; max-height: 90vh; overflow-y: auto; padding: 1.5rem; position: relative; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);">
+            
+            <button @onclick="CloseDeepDive" style="position: absolute; top: 1rem; right: 1rem; background: none; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer; padding: 0.5rem; line-height: 1;">&times;</button>
+            
+            <div style="margin-bottom: 1.5rem;">
+                <h2 style="margin-bottom: 0.25rem; display: flex; align-items: center; gap: 0.5rem;">
+                    @selectedSuggestion.action @selectedSuggestion.symbol
+                    <span style="font-size: 0.8rem; background: @(selectedSuggestion.action?.ToLower() == "buy" ? "var(--accent-success)" : "var(--accent-danger)"); color: white; padding: 0.1rem 0.5rem; border-radius: 4px;">
+                        @selectedSuggestion.confidence
+                    </span>
+                </h2>
+                <p style="color: var(--text-secondary); font-size: 0.9rem;">@selectedSuggestion.reason</p>
+            </div>
+
+            @if (isCheckingDeepDive)
+            {
+                <div style="text-align: center; padding: 2rem; color: var(--text-secondary);">
+                    <div style="display: inline-block; width: 24px; height: 24px; border: 3px solid var(--text-secondary); border-top-color: var(--accent-primary); border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 1rem;"></div>
+                    <p>Fetching deep dive data...</p>
+                </div>
+            }
+            else if (deepDiveData != null)
+            {
+                <div style="margin-bottom: 1.5rem; height: 200px; width: 100%; background: rgba(0,0,0,0.2); border-radius: 8px; padding: 1rem; border: 1px solid var(--border-color);">
+                    <canvas id="deepDiveChart"></canvas>
+                </div>
+
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+                    <div style="background: rgba(255,255,255,0.03); padding: 1rem; border-radius: 8px; text-align: center;">
+                        <div style="color: var(--text-secondary); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.25rem;">Market Cap</div>
+                        <div style="font-weight: 600; font-size: 1.1rem;">@FormatLargeNumber(deepDiveData.fundamentals?.market_cap)</div>
+                    </div>
+                    <div style="background: rgba(255,255,255,0.03); padding: 1rem; border-radius: 8px; text-align: center;">
+                        <div style="color: var(--text-secondary); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.25rem;">P/E Ratio</div>
+                        <div style="font-weight: 600; font-size: 1.1rem;">@(deepDiveData.fundamentals?.pe_ratio?.ToString("N2") ?? "N/A")</div>
+                    </div>
+                    <div style="background: rgba(255,255,255,0.03); padding: 1rem; border-radius: 8px; text-align: center;">
+                        <div style="color: var(--text-secondary); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.25rem;">Analyst Rec</div>
+                        <div style="font-weight: 600; font-size: 1.1rem; color: var(--accent-primary);">@deepDiveData.fundamentals?.recommendation</div>
+                    </div>
+                </div>
+
+                @if (deepDiveData.news != null && deepDiveData.news.Any())
+                {
+                    <h3 style="font-size: 1rem; margin-bottom: 0.75rem;">Recent Headlines</h3>
+                    <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1.5rem;">
+                        @foreach (var item in deepDiveData.news)
+                        {
+                            <a href="@item.link" target="_blank" style="display: block; background: rgba(255,255,255,0.03); padding: 0.75rem; border-radius: 6px; text-decoration: none; color: var(--text-primary); transition: background 0.2s; border: 1px solid transparent;" onmouseover="this.style.background='rgba(255,255,255,0.06)'; this.style.borderColor='var(--border-color)';" onmouseout="this.style.background='rgba(255,255,255,0.03)'; this.style.borderColor='transparent';">
+                                <div style="font-size: 0.9rem; font-weight: 500; margin-bottom: 0.25rem;">@item.title</div>
+                                <div style="font-size: 0.75rem; color: var(--text-secondary);">@item.publisher</div>
+                            </a>
+                        }
+                    </div>
+                }
+
+                <div style="border-top: 1px solid var(--border-color); padding-top: 1.5rem; text-align: center;">
+                    @if (selectedSuggestion.is_actioned)
+                    {
+                         <button class="btn btn-secondary" disabled style="width: 100%; opacity: 0.7;">✓ You executed this trade</button>
+                    }
+                    else
+                    {
+                         <button class="btn btn-primary" @onclick="MarkAsActioned" disabled="@isMarkingActioned" style="width: 100%; font-size: 1rem; padding: 0.75rem;">
+                            @if (isMarkingActioned)
+                            {
+                                <span>Processing...</span>
+                            }
+                            else
+                            {
+                                <span>I Executed This Trade</span>
+                            }
+                        </button>
+                        <p style="color: var(--text-secondary); font-size: 0.75rem; margin-top: 0.75rem; margin-bottom: 0;">Clicking this will track the actual performance of this pick in your Analytics dashboard.</p>
+                    }
+                </div>
+            }
+            else
+            {
+                 <div style="text-align: center; padding: 2rem; color: var(--accent-danger);">Failed to load deep dive data.</div>
+            }
+        </div>
+    </div>
+}
+
+<style>
+    @@keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+</style>
+
+@code {
+    private string connectionMessage = "";
+    private bool requiresMfa = false;
+    private string mfaCode = "";
+
+    private bool isCheckingPortfolio = false;
+    private bool isCheckingSuggestions = false;
+    private bool isRefreshingSuggestions = false;
+
+    private TradeAI.SharedUI.Services.AiSuggestion? selectedSuggestion = null;
+    private DeepDiveResponse? deepDiveData = null;
+    private bool isCheckingDeepDive = false;
+    private bool isMarkingActioned = false;
+    
+    private List<MarketIndex>? marketPulse;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _ = LoadMarketPulse();
+        
+        if (!State.HasData && !isCheckingPortfolio)
+        {
+            await LoadDashboardData();
+        }
+    }
+
+    private async Task LoadDashboardData()
+    {
+        isCheckingPortfolio = true;
+        isCheckingSuggestions = true;
+        StateHasChanged();
+        
+        await FetchBuyingPowerAndSummary();
+        
+        if (State.IsConnected)
+        {
+            await FetchAiSuggestions();
+            State.HasData = true;
+            State.LastFetched = DateTime.Now;
+        }
+        else
+        {
+            isCheckingSuggestions = false;
+            State.AiSuggestions = null;
+        }
+        StateHasChanged();
+    }
+
+    private async Task ReviewTrade(TradeAI.SharedUI.Services.AiSuggestion suggestion)
+    {
+        if (suggestion.symbol == null) return;
+        
+        selectedSuggestion = suggestion;
+        isCheckingDeepDive = true;
+        deepDiveData = null;
+        StateHasChanged();
+
+        try
+        {
+            deepDiveData = await Http.GetFromJsonAsync<DeepDiveResponse>($"/analytics/deepdive/{suggestion.symbol}");
+            StateHasChanged();
+            
+            // Draw chart after UI updates
+            if (deepDiveData?.history != null && deepDiveData.history.Any())
+            {
+                var labels = deepDiveData.history.Select(h => h.date).ToList();
+                var data = deepDiveData.history.Select(h => h.close).ToList();
+                
+                // Determine if stock went up over the period
+                bool isProfit = false;
+                if (data.Count > 1) {
+                    isProfit = data.Last() >= data.First();
+                }
+
+                await Task.Delay(100); // Give DOM time to render canvas
+                await JS.InvokeVoidAsync("drawChart", "deepDiveChart", labels, data, isProfit);
+            }
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("console.error", $"Failed to fetch deep dive: {ex.Message}");
+        }
+        finally
+        {
+            isCheckingDeepDive = false;
+            StateHasChanged();
+        }
+    }
+
+    private void CloseDeepDive()
+    {
+        selectedSuggestion = null;
+        deepDiveData = null;
+    }
+
+    private async Task MarkAsActioned()
+    {
+        if (selectedSuggestion == null) return;
+        
+        isMarkingActioned = true;
+        StateHasChanged();
+
+        try
+        {
+            var response = await Http.PostAsync($"/analytics/suggestions/{selectedSuggestion.id}/action", null);
+            if (response.IsSuccessStatusCode)
+            {
+                selectedSuggestion.is_actioned = true;
+                // Since selectedSuggestion is a reference to the item in State.AiSuggestions, the main list will update too.
+                CloseDeepDive();
+            }
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("alert", $"Failed to update: {ex.Message}");
+        }
+        finally
+        {
+            isMarkingActioned = false;
+            StateHasChanged();
+        }
+    }
+
+    private string FormatLargeNumber(decimal? value)
+    {
+        if (!value.HasValue) return "N/A";
+        if (value >= 1000000000000) return $"{(value.Value / 1000000000000):0.##}T";
+        if (value >= 1000000000) return $"{(value.Value / 1000000000):0.##}B";
+        if (value >= 1000000) return $"{(value.Value / 1000000):0.##}M";
+        return value.Value.ToString("N0");
+    }
+
+    private async Task ConnectRobinhood()
+    {
+        try
+        {
+            connectionMessage = "Connecting...";
+            StateHasChanged();
+            
+            var response = await Http.PostAsJsonAsync("/auth/login", new { username = "", password = "", mfa_code = mfaCode });
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<LoginResponse>();
+                if (result != null && result.success)
+                {
+                    State.IsConnected = true;
+                    requiresMfa = false;
+                    connectionMessage = "Connected successfully!";
+                    await LoadDashboardData();
+                }
+                else if (result != null && result.requires_mfa)
+                {
+                    requiresMfa = true;
+                    connectionMessage = "MFA Required. Please enter the code sent to your device.";
+                }
+                else
+                {
+                    connectionMessage = "Failed: " + (result?.message ?? "Unknown error");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            connectionMessage = $"Error: {ex.Message}";
+        }
+    }
+    
+    private async Task FetchBuyingPowerAndSummary()
+    {
+        try 
+        {
+            var bpResponse = await Http.GetFromJsonAsync<BuyingPowerResponse>("/portfolio/buying_power");
+            if (bpResponse != null && bpResponse.buying_power != null)
+            {
+                State.BuyingPower = $"${bpResponse.buying_power}";
+                State.IsConnected = true;
+                
+                State.PortfolioSummary = await Http.GetFromJsonAsync<TradeAI.SharedUI.Services.PortfolioSummaryResponse>("/portfolio/summary");
+            }
+        }
+        catch
+        {
+            State.IsConnected = false;
+            State.BuyingPower = "$---";
+            State.PortfolioSummary = null;
+        }
+        finally
+        {
+            isCheckingPortfolio = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task FetchAiSuggestions()
+    {
+        try
+        {
+            isCheckingSuggestions = true;
+            StateHasChanged();
+            
+            var response = await Http.GetFromJsonAsync<TradeAI.SharedUI.Services.AiSuggestionResponse>("/ai/suggestions");
+            if (response != null)
+            {
+                State.AiSuggestions = response.suggestions;
+                State.SuggestionsGeneratedAt = response.generated_at;
+                State.SuggestionsAreFresh = response.is_fresh;
+            }
+        }
+        catch
+        {
+            State.AiSuggestions = null;
+        }
+        finally
+        {
+            isCheckingSuggestions = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadMarketPulse()
+    {
+        try
+        {
+            marketPulse = await Http.GetFromJsonAsync<List<MarketIndex>>("/analytics/market-pulse");
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to load market pulse: {ex.Message}");
+        }
+    }
+
+    private async Task RefreshSuggestions()
+    {
+        try
+        {
+            isRefreshingSuggestions = true;
+            StateHasChanged();
+
+            var response = await Http.PostAsync("/ai/suggestions/refresh", null);
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<TradeAI.SharedUI.Services.AiSuggestionResponse>();
+                if (result != null)
+                {
+                    State.AiSuggestions = result.suggestions;
+                    State.SuggestionsGeneratedAt = result.generated_at;
+                    State.SuggestionsAreFresh = result.is_fresh;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("console.error", $"Refresh failed: {ex.Message}");
+        }
+        finally
+        {
+            isRefreshingSuggestions = false;
+            StateHasChanged();
+        }
+    }
+
+    private string FormatGeneratedAt(string? isoTimestamp)
+    {
+        if (string.IsNullOrEmpty(isoTimestamp)) return "Unknown";
+        
+        if (DateTimeOffset.TryParse(isoTimestamp, out var dto))
+        {
+            var local = dto.ToLocalTime();
+            var diff = DateTimeOffset.Now - local;
+            
+            if (diff.TotalMinutes < 1) return "Just now";
+            if (diff.TotalMinutes < 60) return $"{(int)diff.TotalMinutes} min ago";
+            if (diff.TotalHours < 24) return $"{(int)diff.TotalHours}h ago · {local:h:mm tt}";
+            return local.ToString("MMM d · h:mm tt");
+        }
+        return isoTimestamp;
+    }
+    
+    public class LoginResponse
+    {
+        public bool success { get; set; }
+        public string? message { get; set; }
+        public bool requires_mfa { get; set; }
+    }
+    
+    public class BuyingPowerResponse
+    {
+        public string? buying_power { get; set; }
+    }
+    
+    public class DeepDiveResponse
+    {
+        public string? symbol { get; set; }
+        public decimal? current_price { get; set; }
+        public List<PricePoint>? history { get; set; }
+        public Fundamentals? fundamentals { get; set; }
+        public List<NewsItem>? news { get; set; }
+    }
+
+    public class PricePoint
+    {
+        public string? date { get; set; }
+        public decimal close { get; set; }
+    }
+
+    public class Fundamentals
+    {
+        public decimal? market_cap { get; set; }
+        public decimal? pe_ratio { get; set; }
+        public decimal? fifty_two_week_high { get; set; }
+        public decimal? fifty_two_week_low { get; set; }
+        public string? recommendation { get; set; }
+    }
+
+    public class NewsItem
+    {
+        public string? title { get; set; }
+        public string? publisher { get; set; }
+        public string? link { get; set; }
+    }
+
+    public class MarketIndex
+    {
+        public string name { get; set; } = "";
+        public decimal price { get; set; }
+        public decimal percent_change { get; set; }
+        public bool is_up { get; set; }
+    }
+}

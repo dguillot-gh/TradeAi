@@ -1,0 +1,160 @@
+@page "/portfolio"
+
+@inject HttpClient Http
+
+<PageTitle>Portfolio</PageTitle>
+
+<div style="margin-bottom: 2rem;">
+    <h1 style="margin-bottom: 0.5rem;">Your Portfolio</h1>
+    <p>Manage your holdings and review your portfolio diversification.</p>
+</div>
+
+@if (!isLoading && holdings != null && holdings.Any())
+{
+    <div class="glass-panel" style="padding: 1.5rem; margin-bottom: 2rem; display: flex; flex-direction: column; align-items: center;">
+        <h2 style="margin-bottom: 1rem; width: 100%; text-align: left;">Holdings Breakdown</h2>
+        <div style="position: relative; width: 100%; max-width: 400px; height: 300px;">
+            <canvas id="portfolioChart"></canvas>
+            <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; pointer-events: none;">
+                <div style="font-size: 0.8rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.25rem;">Total Equity</div>
+                <div style="font-size: 1.5rem; font-weight: bold; color: var(--text-primary);">@totalEquity.ToString("C2")</div>
+            </div>
+        </div>
+    </div>
+}
+
+<div class="glass-panel portfolio-table-wrap" style="padding: 0;">
+    <table style="width: 100%; border-collapse: collapse; text-align: left;">
+        <thead style="background: rgba(15, 23, 42, 0.6); border-bottom: 1px solid var(--border-color);">
+            <tr>
+                <th style="padding: 1rem 1.5rem; font-weight: 600; color: var(--text-secondary);">Asset</th>
+                <th style="padding: 1rem 1.5rem; font-weight: 600; color: var(--text-secondary);">Shares</th>
+                <th style="padding: 1rem 1.5rem; font-weight: 600; color: var(--text-secondary);">Weight</th>
+                <th style="padding: 1rem 1.5rem; font-weight: 600; color: var(--text-secondary);">Avg Price</th>
+                <th style="padding: 1rem 1.5rem; font-weight: 600; color: var(--text-secondary);">Current Price</th>
+                <th style="padding: 1rem 1.5rem; font-weight: 600; color: var(--text-secondary);">Return</th>
+                <th style="padding: 1rem 1.5rem; font-weight: 600; color: var(--text-secondary);">Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            @if (isLoading)
+            {
+                <tr><td colspan="6" style="padding: 1rem 1.5rem; text-align: center;">Loading portfolio...</td></tr>
+            }
+            else if (holdings == null || holdings.Count == 0)
+            {
+                <tr><td colspan="6" style="padding: 1rem 1.5rem; text-align: center;">No holdings found or not connected to Robinhood.</td></tr>
+            }
+            else
+            {
+                foreach (var kvp in holdings)
+                {
+                    var symbol = kvp.Key;
+                    var holding = kvp.Value;
+                    var isPositive = double.TryParse(holding.percent_change, out var pct) && pct >= 0;
+                    var returnColor = isPositive ? "var(--accent-success)" : "var(--accent-danger)";
+                    var returnPrefix = isPositive ? "+" : "";
+                    
+                    decimal shares = 0;
+                    decimal.TryParse(holding.quantity, out shares);
+                    
+                    decimal equity = 0;
+                    decimal.TryParse(holding.equity, out equity);
+                    
+                    var weight = totalEquity > 0 ? (equity / totalEquity) * 100 : 0;
+
+                    <tr style="border-bottom: 1px solid rgba(51, 65, 85, 0.5);">
+                        <td style="padding: 1rem 1.5rem;">
+                            <div style="font-weight: 600;">@symbol</div>
+                            <div style="font-size: 0.875rem; color: var(--text-secondary);">@holding.name</div>
+                        </td>
+                        <td style="padding: 1rem 1.5rem;">@shares.ToString("0.####")</td>
+                        <td style="padding: 1rem 1.5rem;">@weight.ToString("0.##")%</td>
+                        <td style="padding: 1rem 1.5rem;">$@holding.average_buy_price</td>
+                        <td style="padding: 1rem 1.5rem;">$@holding.price</td>
+                        <td style="padding: 1rem 1.5rem; color: @returnColor; font-weight: 500;">
+                            @returnPrefix$@holding.equity_change (@holding.percent_change%)
+                        </td>
+                        <td style="padding: 1rem 1.5rem;">
+                            <button class="btn" style="background: rgba(255,255,255,0.1); padding: 0.4rem 0.8rem; font-size: 0.875rem;">Trade</button>
+                        </td>
+                    </tr>
+                }
+            }
+        </tbody>
+    </table>
+</div>
+
+@inject IJSRuntime JS
+
+@code {
+    private Dictionary<string, Holding>? holdings;
+    private bool isLoading = true;
+    private decimal totalEquity = 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadHoldings();
+    }
+
+    private async Task LoadHoldings()
+    {
+        try
+        {
+            isLoading = true;
+            holdings = await Http.GetFromJsonAsync<Dictionary<string, Holding>>("/portfolio/holdings");
+            
+            if (holdings != null)
+            {
+                totalEquity = holdings.Values.Sum(h => {
+                    decimal.TryParse(h.equity, out decimal eq);
+                    return eq;
+                });
+                
+                StateHasChanged();
+                await DrawChart();
+            }
+        }
+        catch
+        {
+            holdings = new Dictionary<string, Holding>();
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task DrawChart()
+    {
+        if (holdings == null || !holdings.Any()) return;
+        
+        var labels = holdings.Keys.ToList();
+        var data = holdings.Values.Select(h => {
+            decimal.TryParse(h.equity, out decimal eq);
+            return eq;
+        }).ToList();
+        
+        // Generate pleasing colors based on index
+        var colors = new[] { 
+            "#3b82f6", "#10b981", "#8b5cf6", "#f59e0b", "#ef4444", 
+            "#ec4899", "#06b6d4", "#14b8a6", "#f97316", "#6366f1" 
+        };
+        
+        var chartColors = labels.Select((_, i) => colors[i % colors.Length]).ToList();
+
+        await Task.Delay(100); // Give DOM time to render canvas
+        await JS.InvokeVoidAsync("drawDonutChart", "portfolioChart", labels, data, chartColors);
+    }
+
+    public class Holding
+    {
+        public string? price { get; set; }
+        public string? quantity { get; set; }
+        public string? average_buy_price { get; set; }
+        public string? percent_change { get; set; }
+        public string? equity_change { get; set; }
+        public string? equity { get; set; }
+        public string? name { get; set; }
+    }
+}

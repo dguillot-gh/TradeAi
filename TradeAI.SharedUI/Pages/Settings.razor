@@ -1,0 +1,95 @@
+@page "/settings"
+@using TradeAI.SharedUI.Services
+@inject HttpClient Http
+@inject ISettingsService SettingsService
+
+<PageTitle>Settings</PageTitle>
+
+<div class="page-header" style="margin-bottom: 1.5rem;">
+    <h1 style="margin-bottom: 0.25rem;">Settings</h1>
+    <p>Configure your application preferences.</p>
+</div>
+
+<div class="glass-panel" style="padding: 1.25rem;">
+    <h2 style="margin-bottom: 1rem;">Server Configuration</h2>
+    
+    <div class="form-group" style="margin-bottom: 1rem;">
+        <label for="apiUrl">Backend API URL</label>
+        <input type="text" id="apiUrl" class="form-control" @bind="apiUrl" placeholder="http://192.168.1.15:8000" style="width: 100%; padding: 0.5rem; margin-top: 0.5rem; border-radius: 4px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color);" />
+    </div>
+    
+    <button class="btn btn-primary" @onclick="SaveSettings" disabled="@isChecking">
+        @(isChecking ? "Validating..." : "Save Settings")
+    </button>
+    
+    @if (statusMessage != null)
+    {
+        <p style="margin-top: 1rem; color: @(isConnected ? "var(--accent-success)" : "var(--accent-danger)"); font-weight: 500;">@statusMessage</p>
+    }
+</div>
+
+@code {
+    private string apiUrl = "";
+    private string? statusMessage;
+    private bool isConnected = false;
+    private bool isChecking = false;
+
+    protected override void OnInitialized()
+    {
+        apiUrl = SettingsService.GetApiUrl();
+    }
+
+    private async Task SaveSettings()
+    {
+        if (!Uri.TryCreate(apiUrl, UriKind.Absolute, out var uri))
+        {
+            isConnected = false;
+            statusMessage = "Invalid URL format. Please include http:// or https://";
+            return;
+        }
+
+        isChecking = true;
+        statusMessage = "Connecting...";
+        StateHasChanged();
+
+        try
+        {
+            // Temporarily update HttpClient to test
+            Http.BaseAddress = uri;
+            
+            // The backend / returns {"status": "ok", "message": "API is running"}
+            var response = await Http.GetAsync("/");
+            
+            if (response.IsSuccessStatusCode)
+            {
+                var content = await response.Content.ReadAsStringAsync();
+                if (content.Contains("\"status\":\"ok\"") || content.Contains("\"status\": \"ok\""))
+                {
+                    isConnected = true;
+                    statusMessage = "Connected successfully! Settings saved.";
+                    SettingsService.SetApiUrl(apiUrl);
+                }
+                else
+                {
+                    isConnected = false;
+                    statusMessage = "Connected to a server, but it doesn't look like the TradeAI API.";
+                }
+            }
+            else
+            {
+                isConnected = false;
+                statusMessage = $"Failed to connect: Server returned {response.StatusCode}";
+            }
+        }
+        catch (Exception ex)
+        {
+            isConnected = false;
+            statusMessage = $"Connection failed: {ex.Message}";
+        }
+        finally
+        {
+            isChecking = false;
+            StateHasChanged();
+        }
+    }
+}

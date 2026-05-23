@@ -1,0 +1,41 @@
+@inherits LayoutComponentBase
+
+<div class="page-container">
+    <aside class="sidebar">
+        <div class="nav-header">
+            <h2 style="margin: 0; color: var(--accent-primary); padding-left: 1rem;">TradeAI</h2>
+        </div>
+
+        <nav style="margin-top: 2rem;">
+            <div class="nav-item">
+                <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
+                    📊 Dashboard
+                </NavLink>
+            </div>
+            <div class="nav-item">
+                <NavLink class="nav-link" href="advisor">
+                    🤖 AI Advisor
+                </NavLink>
+            </div>
+            <div class="nav-item">
+                <NavLink class="nav-link" href="analytics">
+                    📈 Analytics
+                </NavLink>
+            </div>
+            <div class="nav-item">
+                <NavLink class="nav-link" href="portfolio">
+                    💼 Portfolio
+                </NavLink>
+            </div>
+            <div class="nav-item">
+                <NavLink class="nav-link" href="settings">
+                    ⚙️ Settings
+                </NavLink>
+            </div>
+        </nav>
+    </aside>
+
+    <main class="main-content">
+        @Body
+    </main>
+</div>

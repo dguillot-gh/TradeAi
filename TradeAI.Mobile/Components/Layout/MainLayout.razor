@@ -1,0 +1,77 @@
+@inherits LayoutComponentBase
+@inject HttpClient Http
+
+<div class="mobile-layout">
+    <!-- Top header -->
+    <header class="mobile-header" style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; padding-top: 2.75rem;">
+        <h1 class="mobile-logo" style="margin: 0; font-size: 1.4rem; line-height: 1; display: flex; align-items: center;">TradeAI</h1>
+        
+        <div style="background: rgba(59, 130, 246, 0.15); border: 1px solid rgba(59, 130, 246, 0.5); border-radius: 20px; padding: 0.25rem 0.6rem; font-size: 0.75rem; display: flex; align-items: center; gap: 0.35rem; cursor: pointer; height: fit-content;" @onclick="LoadQuota">
+            <span style="width: 6px; height: 6px; border-radius: 50%; background: var(--accent-success); box-shadow: var(--glow-success);"></span>
+            @quotaText
+        </div>
+
+        <a href="settings" style="text-decoration: none; color: var(--text-primary); font-size: 1.5rem; line-height: 1; display: flex; align-items: center;">⚙️</a>
+    </header>
+
+    <!-- Scrollable content area -->
+    <main class="mobile-content">
+        @Body
+    </main>
+
+    <!-- Bottom tab bar -->
+    <nav class="mobile-tab-bar">
+        <NavLink class="mobile-tab" href="" Match="NavLinkMatch.All">
+            <span class="mobile-tab-icon">📊</span>
+            <span class="mobile-tab-label">Dashboard</span>
+        </NavLink>
+        <NavLink class="mobile-tab" href="advisor">
+            <span class="mobile-tab-icon">🤖</span>
+            <span class="mobile-tab-label">Advisor</span>
+        </NavLink>
+        <NavLink class="mobile-tab" href="analytics">
+            <span class="mobile-tab-icon">📈</span>
+            <span class="mobile-tab-label">Analytics</span>
+        </NavLink>
+        <NavLink class="mobile-tab" href="portfolio">
+            <span class="mobile-tab-icon">💼</span>
+            <span class="mobile-tab-label">Portfolio</span>
+        </NavLink>
+        <NavLink class="mobile-tab" href="settings">
+            <span class="mobile-tab-icon">⚙️</span>
+            <span class="mobile-tab-label">Settings</span>
+        </NavLink>
+    </nav>
+</div>
+
+@code {
+    private string quotaText = "Checking...";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadQuota();
+    }
+
+    private async Task LoadQuota()
+    {
+        try
+        {
+            var quota = await Http.GetFromJsonAsync<QuotaResponse>("/ai/quota");
+            if (quota != null)
+            {
+                var used = quota.total_tokens_used >= 1000 ? $"{(quota.total_tokens_used / 1000.0):0.#}k" : quota.total_tokens_used.ToString();
+                quotaText = $"{used} / 1M";
+            }
+        }
+        catch
+        {
+            quotaText = "Offline";
+        }
+    }
+
+    public class QuotaResponse
+    {
+        public int total_tokens_used { get; set; }
+        public int estimated_limit { get; set; }
+    }
+}

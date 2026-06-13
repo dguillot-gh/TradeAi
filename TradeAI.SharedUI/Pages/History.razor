@@ -1,0 +1,109 @@
+@page "/history"
+@using TradeAI.SharedUI.Services
+@inject HttpClient Http
+
+<PageTitle>Transaction History</PageTitle>
+
+<div class="page-header" style="margin-bottom: 1.5rem;">
+    <h1 style="margin-bottom: 0.25rem;">Transaction History</h1>
+    <p>Review your recent trades and dividend payouts.</p>
+</div>
+
+<div class="glass-panel portfolio-table-wrap" style="padding: 0;">
+    <table style="width: 100%; border-collapse: collapse; text-align: left;">
+        <thead style="background: rgba(15, 23, 42, 0.6); border-bottom: 1px solid var(--border-color);">
+            <tr>
+                <th style="padding: 1rem 1.5rem; font-weight: 600; color: var(--text-secondary);">Date</th>
+                <th style="padding: 1rem 1.5rem; font-weight: 600; color: var(--text-secondary);">Type</th>
+                <th style="padding: 1rem 1.5rem; font-weight: 600; color: var(--text-secondary);">Asset</th>
+                <th style="padding: 1rem 1.5rem; font-weight: 600; color: var(--text-secondary);">Amount</th>
+                <th style="padding: 1rem 1.5rem; font-weight: 600; color: var(--text-secondary);">Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            @if (isLoading)
+            {
+                <tr><td colspan="5" style="padding: 1rem 1.5rem; text-align: center;">Loading transaction history...</td></tr>
+            }
+            else if (transactions == null || transactions.Count == 0)
+            {
+                <tr><td colspan="5" style="padding: 1rem 1.5rem; text-align: center;">No transactions found.</td></tr>
+            }
+            else
+            {
+                foreach (var tx in transactions)
+                {
+                    var isPositive = tx.type == "Dividend" || (tx.type?.Contains("Sell") ?? false);
+                    var amountColor = isPositive ? "var(--accent-success)" : "var(--text-primary)";
+                    var prefix = isPositive ? "+" : "";
+
+                    <tr style="border-bottom: 1px solid rgba(51, 65, 85, 0.5);">
+                        <td style="padding: 1rem 1.5rem; color: var(--text-secondary);">
+                            @FormatDate(tx.date)
+                        </td>
+                        <td style="padding: 1rem 1.5rem;">
+                            <span style="display: inline-block; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.8rem; background: rgba(255,255,255,0.05);">
+                                @tx.type
+                            </span>
+                        </td>
+                        <td style="padding: 1rem 1.5rem; font-weight: 600;">@tx.symbol</td>
+                        <td style="padding: 1rem 1.5rem; color: @amountColor; font-weight: 500;">
+                            @prefix@tx.amount.ToString("C2")
+                        </td>
+                        <td style="padding: 1rem 1.5rem;">
+                            @{
+                                var statusColor = tx.status?.ToLower() switch {
+                                    "filled" => "var(--accent-success)",
+                                    "confirmed" => "var(--accent-success)",
+                                    "paid" => "var(--accent-success)",
+                                    "cancelled" => "var(--accent-danger)",
+                                    "voided" => "var(--accent-danger)",
+                                    _ => "var(--text-secondary)"
+                                };
+                            }
+                            <span style="color: @statusColor;">@tx.status</span>
+                        </td>
+                    </tr>
+                }
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    private List<TransactionModel>? transactions;
+    private bool isLoading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadHistory();
+    }
+
+    private async Task LoadHistory()
+    {
+        try
+        {
+            isLoading = true;
+            transactions = await Http.GetFromJsonAsync<List<TransactionModel>>("/portfolio/transactions");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading transactions: {ex.Message}");
+            transactions = new List<TransactionModel>();
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private string FormatDate(string? isoDate)
+    {
+        if (string.IsNullOrEmpty(isoDate)) return "Unknown";
+        if (DateTime.TryParse(isoDate, out var dt))
+        {
+            return dt.ToLocalTime().ToString("MMM dd, yyyy");
+        }
+        return isoDate;
+    }
+}

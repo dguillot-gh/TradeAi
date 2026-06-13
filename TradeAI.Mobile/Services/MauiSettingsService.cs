@@ -5,7 +5,7 @@ namespace TradeAI.Mobile.Services;
 
 public class MauiSettingsService : ISettingsService
 {
-    private const string ApiUrlKey = "TradeAI_ApiBaseUrl";
+    private const string ApiUrlKey = "TradeAI_ApiBaseUrl_v2";
     
     // Default depends on platform when first retrieved
     private readonly string _defaultUrl;
@@ -13,8 +13,8 @@ public class MauiSettingsService : ISettingsService
     public MauiSettingsService()
     {
         _defaultUrl = DeviceInfo.Platform == DevicePlatform.Android 
-            ? "http://10.0.2.2:8000" 
-            : "http://localhost:8000";
+            ? "http://10.0.2.2:8050" 
+            : "http://localhost:8050";
     }
 
     public string GetApiUrl()

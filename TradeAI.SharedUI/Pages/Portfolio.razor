@@ -1,5 +1,6 @@
 @page "/portfolio"
 
+@using TradeAI.SharedUI.Services
 @inject HttpClient Http
 
 <PageTitle>Portfolio</PageTitle>
@@ -8,6 +9,16 @@
     <h1 style="margin-bottom: 0.5rem;">Your Portfolio</h1>
     <p>Manage your holdings and review your portfolio diversification.</p>
 </div>
+
+@if (!isLoading && historicals != null && historicals.Any())
+{
+    <div class="glass-panel" style="padding: 1.5rem; margin-bottom: 2rem;">
+        <h2 style="margin-bottom: 1rem;">Performance (Past Month)</h2>
+        <div style="position: relative; width: 100%; height: 300px;">
+            <canvas id="performanceChart"></canvas>
+        </div>
+    </div>
+}
 
 @if (!isLoading && holdings != null && holdings.Any())
 {
@@ -89,6 +100,7 @@
 
 @code {
     private Dictionary<string, Holding>? holdings;
+    private List<HistoricalPoint>? historicals;
     private bool isLoading = true;
     private decimal totalEquity = 0;
 
@@ -111,13 +123,39 @@
                     return eq;
                 });
                 
+                try 
+                {
+                    historicals = await Http.GetFromJsonAsync<List<HistoricalPoint>>("/portfolio/historicals");
+                }
+                catch (Exception hEx)
+                {
+                    Console.WriteLine($"Failed to load historicals: {hEx.Message}");
+                }
+
                 StateHasChanged();
-                await DrawChart();
+                try 
+                {
+                    await DrawChart();
+                }
+                catch (Exception chartEx)
+                {
+                    Console.WriteLine($"Failed to draw chart: {chartEx.Message}");
+                }
+                try
+                {
+                    await DrawPerformanceChart();
+                }
+                catch (Exception pChartEx)
+                {
+                    Console.WriteLine($"Failed to draw performance chart: {pChartEx.Message}");
+                }
             }
         }
-        catch
+        catch (Exception ex)
         {
+            await JS.InvokeVoidAsync("console.error", $"Portfolio load error: {ex.Message}");
             holdings = new Dictionary<string, Holding>();
+            totalEquity = -1; // Use -1 to indicate an error state if needed
         }
         finally
         {
@@ -145,6 +183,27 @@
 
         await Task.Delay(100); // Give DOM time to render canvas
         await JS.InvokeVoidAsync("drawDonutChart", "portfolioChart", labels, data, chartColors);
+    }
+
+    private async Task DrawPerformanceChart()
+    {
+        if (historicals == null || !historicals.Any()) return;
+        
+        var labels = historicals.Select(h => {
+            if (DateTime.TryParse(h.begins_at, out var dt))
+                return dt.ToLocalTime().ToString("MMM dd");
+            return "";
+        }).ToList();
+        
+        var data = historicals.Select(h => {
+            decimal.TryParse(h.adjusted_close_equity, out decimal eq);
+            return eq;
+        }).ToList();
+
+        var isProfit = data.LastOrDefault() >= data.FirstOrDefault();
+
+        await Task.Delay(100);
+        await JS.InvokeVoidAsync("drawChart", "performanceChart", labels, data, isProfit);
     }
 
     public class Holding

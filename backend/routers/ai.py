@@ -39,11 +39,31 @@ def _generate_and_save_suggestions() -> dict:
     # Get previous suggestions for AI memory
     previous_batches = get_suggestions_history(limit=3)
 
-    # Generate new suggestions with memory context
-    suggestions = generate_trade_suggestions(
-        portfolio_context=simplified_portfolio,
-        previous_suggestions=previous_batches,
-    )
+    # Generate new suggestions with memory context, validating output
+    max_retries = 3
+    suggestions = []
+    
+    for attempt in range(max_retries):
+        suggestions = generate_trade_suggestions(
+            portfolio_context=simplified_portfolio,
+            previous_suggestions=previous_batches,
+        )
+        
+        if not suggestions:
+            break
+            
+        # Hard-coded safety filter: Prevent naked short selling
+        invalid_sell = False
+        for s in suggestions:
+            action = s.get("action", "").lower()
+            symbol = s.get("symbol", "")
+            if action == "sell" and symbol not in simplified_portfolio:
+                logger.warning(f"AI incorrectly suggested selling unowned stock {symbol}. Retrying... (Attempt {attempt+1}/{max_retries})")
+                invalid_sell = True
+                break
+                
+        if not invalid_sell:
+            break
 
     if not suggestions:
         return {

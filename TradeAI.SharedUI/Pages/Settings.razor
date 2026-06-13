@@ -15,7 +15,10 @@
     
     <div class="form-group" style="margin-bottom: 1rem;">
         <label for="apiUrl">Backend API URL</label>
-        <input type="text" id="apiUrl" class="form-control" @bind="apiUrl" placeholder="http://192.168.1.15:8000" style="width: 100%; padding: 0.5rem; margin-top: 0.5rem; border-radius: 4px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color);" />
+        <input type="text" id="apiUrl" class="form-control" @bind="apiUrl" title="Changing the API URL requires a full application restart to take effect." placeholder="http://192.168.1.15:8000" style="width: 100%; padding: 0.5rem; margin-top: 0.5rem; border-radius: 4px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color);" />
+        <small style="display: block; margin-top: 0.5rem; color: #888; font-size: 0.85rem;">
+            💡 <b>Note:</b> Changing this address requires a full application restart to take effect.
+        </small>
     </div>
     
     <button class="btn btn-primary" @onclick="SaveSettings" disabled="@isChecking">
@@ -54,11 +57,15 @@
 
         try
         {
-            // Temporarily update HttpClient to test
-            Http.BaseAddress = uri;
+            // Create a temporary client to test the new URL without modifying the injected one
+            using var tempClient = new HttpClient 
+            { 
+                BaseAddress = uri,
+                Timeout = TimeSpan.FromSeconds(5)
+            };
             
             // The backend / returns {"status": "ok", "message": "API is running"}
-            var response = await Http.GetAsync("/");
+            var response = await tempClient.GetAsync("/");
             
             if (response.IsSuccessStatusCode)
             {
@@ -66,7 +73,7 @@
                 if (content.Contains("\"status\":\"ok\"") || content.Contains("\"status\": \"ok\""))
                 {
                     isConnected = true;
-                    statusMessage = "Connected successfully! Settings saved.";
+                    statusMessage = "Connected successfully! Settings saved. Please completely restart the app to apply.";
                     SettingsService.SetApiUrl(apiUrl);
                 }
                 else

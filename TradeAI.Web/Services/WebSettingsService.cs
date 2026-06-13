@@ -4,7 +4,7 @@ namespace TradeAI.Web.Services;
 
 public class WebSettingsService : ISettingsService
 {
-    private string _apiUrl = "http://localhost:8000";
+    private string _apiUrl = "http://localhost:8050";
 
     public string GetApiUrl()
     {

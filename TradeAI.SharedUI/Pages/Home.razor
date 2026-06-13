@@ -406,12 +406,16 @@
                 else if (result != null && result.requires_mfa)
                 {
                     requiresMfa = true;
-                    connectionMessage = "MFA Required. Please enter the code sent to your device.";
+                    connectionMessage = "MFA Required. Please enter the code sent to your device, or approve the push notification and submit.";
                 }
                 else
                 {
                     connectionMessage = "Failed: " + (result?.message ?? "Unknown error");
                 }
+            }
+            else
+            {
+                connectionMessage = $"Failed to connect: Server returned {response.StatusCode}";
             }
         }
         catch (Exception ex)
@@ -492,7 +496,7 @@
             isRefreshingSuggestions = true;
             StateHasChanged();
 
-            var response = await Http.PostAsync("/ai/suggestions/refresh", null);
+            var response = await Http.PostAsJsonAsync("/ai/suggestions/refresh", new {});
             if (response.IsSuccessStatusCode)
             {
                 var result = await response.Content.ReadFromJsonAsync<TradeAI.SharedUI.Services.AiSuggestionResponse>();

@@ -36,3 +36,20 @@ public class AiSuggestion
     public string? reason { get; set; }
     public bool is_actioned { get; set; }
 }
+
+public class TransactionModel
+{
+    public string? id { get; set; }
+    public string? date { get; set; }
+    public string? type { get; set; }
+    public string? symbol { get; set; }
+    public decimal amount { get; set; }
+    public string? status { get; set; }
+}
+
+public class HistoricalPoint
+{
+    public string? begins_at { get; set; }
+    public string? adjusted_open_equity { get; set; }
+    public string? adjusted_close_equity { get; set; }
+}
